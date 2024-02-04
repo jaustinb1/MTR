@@ -23,16 +23,22 @@ class WaymoDataset(DatasetTemplate):
     def __init__(self, dataset_cfg=None, training=True, logger=None):
         super().__init__(dataset_cfg=dataset_cfg, training=training, logger=logger)
 
+        tag = 'training' if training else 'validation'
+        shards = 1000 if training else 150
         config = _config.DatasetConfig(
-            path='/media/jonathan/DataStorage/WaymoOpenMotion/tf_example/training/training_tfexample.tfrecord@1000',
+            path=f'/media/jonathan/DataStorage/WaymoOpenMotion/tf_example/{tag}/{tag}_tfexample.tfrecord@{shards}',
             max_num_rg_points=20000,
             data_format=_config.DataFormat.TFRECORD,
             max_num_objects=32,
             repeat=None)
+        if training:
+            self._len = 103354
+        else:
+            self._len = 5000
         self.dataset = dataloader.simulator_state_generator(config=config)
 
     def __len__(self):
-        return 103354 #len(self.dataset)
+        return self._len #len(self.dataset)
 
     def __getitem__(self, index):
         d = next(self.dataset)

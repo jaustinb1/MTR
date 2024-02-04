@@ -1,6 +1,6 @@
 # Motion Transformer (MTR): https://arxiv.org/abs/2209.13508
 # Published at NeurIPS 2022
-# Written by Shaoshuai Shi 
+# Written by Shaoshuai Shi
 # All Rights Reserved
 
 import _init_path
@@ -51,7 +51,7 @@ def parse_config():
     parser.add_argument('--not_eval_with_train', action='store_true', default=False, help='')
     parser.add_argument('--logger_iter_interval', type=int, default=50, help='')
     parser.add_argument('--ckpt_save_time_interval', type=int, default=300, help='in terms of seconds')
-
+    parser.add_argument('--eval_only', type=bool, default=False, help='if we only run eval')
     parser.add_argument('--add_worker_init_fn', action='store_true', default=False, help='')
     args = parser.parse_args()
 
@@ -224,34 +224,35 @@ def main():
     eval_output_dir = output_dir / 'eval' / 'eval_with_train'
     eval_output_dir.mkdir(parents=True, exist_ok=True)
 
-    # -----------------------start training---------------------------
-    logger.info('**********************Start training %s/%s(%s)**********************'
-                % (cfg.EXP_GROUP_PATH, cfg.TAG, args.extra_tag))
-    train_model(
-        model,
-        optimizer,
-        train_loader,
-        optim_cfg=cfg.OPTIMIZATION,
-        start_epoch=start_epoch,
-        total_epochs=args.epochs,
-        start_iter=it,
-        rank=cfg.LOCAL_RANK,
-        ckpt_save_dir=ckpt_dir,
-        train_sampler=train_sampler,
-        ckpt_save_interval=args.ckpt_save_interval,
-        max_ckpt_save_num=args.max_ckpt_save_num,
-        merge_all_iters_to_one_epoch=args.merge_all_iters_to_one_epoch,
-        tb_log=tb_log,
-        scheduler=scheduler,
-        logger=logger,
-        eval_output_dir=eval_output_dir,
-        test_loader=test_loader if not args.not_eval_with_train else None,
-        cfg=cfg, dist_train=dist_train, logger_iter_interval=args.logger_iter_interval,
-        ckpt_save_time_interval=args.ckpt_save_time_interval
-    )
+    if not args.eval_only:
+        # -----------------------start training---------------------------
+        logger.info('**********************Start training %s/%s(%s)**********************'
+                    % (cfg.EXP_GROUP_PATH, cfg.TAG, args.extra_tag))
+        train_model(
+            model,
+            optimizer,
+            train_loader,
+            optim_cfg=cfg.OPTIMIZATION,
+            start_epoch=start_epoch,
+            total_epochs=args.epochs,
+            start_iter=it,
+            rank=cfg.LOCAL_RANK,
+            ckpt_save_dir=ckpt_dir,
+            train_sampler=train_sampler,
+            ckpt_save_interval=args.ckpt_save_interval,
+            max_ckpt_save_num=args.max_ckpt_save_num,
+            merge_all_iters_to_one_epoch=args.merge_all_iters_to_one_epoch,
+            tb_log=tb_log,
+            scheduler=scheduler,
+            logger=logger,
+            eval_output_dir=eval_output_dir,
+            test_loader=test_loader if not args.not_eval_with_train else None,
+            cfg=cfg, dist_train=dist_train, logger_iter_interval=args.logger_iter_interval,
+            ckpt_save_time_interval=args.ckpt_save_time_interval
+        )
 
-    logger.info('**********************End training %s/%s(%s)**********************\n\n\n'
-                % (cfg.EXP_GROUP_PATH, cfg.TAG, args.extra_tag))
+        logger.info('**********************End training %s/%s(%s)**********************\n\n\n'
+                    % (cfg.EXP_GROUP_PATH, cfg.TAG, args.extra_tag))
 
 
     logger.info('**********************Start evaluation %s/%s(%s)**********************' %
