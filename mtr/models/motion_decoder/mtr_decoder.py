@@ -1,6 +1,6 @@
 # Motion Transformer (MTR): https://arxiv.org/abs/2209.13508
 # Published at NeurIPS 2022
-# Written by Shaoshuai Shi 
+# Written by Shaoshuai Shi
 # All Rights Reserved
 
 
@@ -68,6 +68,8 @@ class MTRDecoder(nn.Module):
         self.intention_points, self.intention_query, self.intention_query_mlps = self.build_motion_query(
             self.d_model, use_place_holder=self.use_place_holder
         )
+
+
 
         # define the motion head
         temp_layer = common_layers.build_mlps(c_in=self.d_model * 2 + map_d_model, mlp_channels=[self.d_model, self.d_model], ret_before_act=True)
@@ -143,7 +145,7 @@ class MTRDecoder(nn.Module):
 
         motion_reg_heads = nn.ModuleList([copy.deepcopy(motion_reg_head) for _ in range(num_decoder_layers)])
         motion_cls_heads = nn.ModuleList([copy.deepcopy(motion_cls_head) for _ in range(num_decoder_layers)])
-        motion_vel_heads = None 
+        motion_vel_heads = None
         return motion_reg_heads, motion_cls_heads, motion_vel_heads
 
     def apply_dense_future_prediction(self, obj_feature, obj_mask, obj_pos):
@@ -182,8 +184,13 @@ class MTRDecoder(nn.Module):
         if self.use_place_holder:
             raise NotImplementedError
         else:
+            mapping = {
+                1: 'TYPE_VEHICLE',
+                2: 'TYPE_PEDESTRIAN',
+                3: 'TYPE_CYCLIST',
+            }
             intention_points = torch.stack([
-                self.intention_points[center_objects_type[obj_idx]]
+                self.intention_points[mapping[center_objects_type[obj_idx]]]
                 for obj_idx in range(num_center_objects)], dim=0)
             intention_points = intention_points.permute(1, 0, 2)  # (num_query, num_center_objects, 2)
 
@@ -314,7 +321,7 @@ class MTRDecoder(nn.Module):
                 attention_layer=self.obj_decoder_layers[layer_idx],
                 dynamic_query_center=dynamic_query_center,
                 layer_idx=layer_idx
-            ) 
+            )
 
             # query map feature
             collected_idxs, base_map_idxs = self.apply_dynamic_map_collection(
@@ -337,12 +344,12 @@ class MTRDecoder(nn.Module):
                 query_index_pair=collected_idxs,
                 query_content_pre_mlp=self.map_query_content_mlps[layer_idx],
                 query_embed_pre_mlp=self.map_query_embed_mlps
-            ) 
+            )
 
             query_feature = torch.cat([center_objects_feature, obj_query_feature, map_query_feature], dim=-1)
             query_content = self.query_feature_fusion_layers[layer_idx](
                 query_feature.flatten(start_dim=0, end_dim=1)
-            ).view(num_query, num_center_objects, -1) 
+            ).view(num_query, num_center_objects, -1)
 
             # motion prediction
             query_content_t = query_content.permute(1, 0, 2).contiguous().view(num_center_objects * num_query, -1)

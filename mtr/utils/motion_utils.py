@@ -1,10 +1,10 @@
 # Motion Transformer (MTR): https://arxiv.org/abs/2209.13508
 # Published at NeurIPS 2022
-# Written by Shaoshuai Shi 
+# Written by Shaoshuai Shi
 # All Rights Reserved
 
 
-import torch 
+import torch
 
 
 def batch_nms(pred_trajs, pred_scores, dist_thresh, num_ret_modes=6):
@@ -90,18 +90,23 @@ def get_ade_of_waymo(pred_trajs, gt_trajs, gt_valid_mask, calculate_steps=(5, 9,
 def get_ade_of_each_category(pred_trajs, gt_trajs, gt_trajs_mask, object_types, valid_type_list, post_tag='', pre_tag=''):
     """
     Args:
-        pred_trajs (num_center_objects, num_modes, num_timestamps, 2): 
-        gt_trajs (num_center_objects, num_timestamps, 2): 
-        gt_trajs_mask (num_center_objects, num_timestamps): 
-        object_types (num_center_objects): 
+        pred_trajs (num_center_objects, num_modes, num_timestamps, 2):
+        gt_trajs (num_center_objects, num_timestamps, 2):
+        gt_trajs_mask (num_center_objects, num_timestamps):
+        object_types (num_center_objects):
 
     Returns:
-        
+
     """
     ret_dict = {}
-    
+    mapping = {
+        'TYPE_VEHICLE': 1,
+        'TYPE_PEDESTRIAN': 2,
+        'TYPE_CYCLIST': 3,
+    }
+
     for cur_type in valid_type_list:
-        type_mask = (object_types == cur_type)
+        type_mask = (object_types == mapping[cur_type])
         ret_dict[f'{pre_tag}ade_{cur_type}{post_tag}'] = -0.0
         if type_mask.sum() == 0:
             continue
