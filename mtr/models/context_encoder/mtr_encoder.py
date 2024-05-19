@@ -1,6 +1,6 @@
 # Motion Transformer (MTR): https://arxiv.org/abs/2209.13508
 # Published at NeurIPS 2022
-# Written by Shaoshuai Shi 
+# Written by Shaoshuai Shi
 # All Rights Reserved
 
 
@@ -81,7 +81,7 @@ class MTREncoder(nn.Module):
         x_t = x.permute(1, 0, 2)
         x_mask_t = x_mask.permute(1, 0, 2)
         x_pos_t = x_pos.permute(1, 0, 2)
- 
+
         pos_embedding = position_encoding_utils.gen_sineembed_for_position(x_pos_t, hidden_dim=d_model)
 
         for k in range(len(self.self_attn_layers)):
@@ -125,6 +125,7 @@ class MTREncoder(nn.Module):
         # positional encoding
         pos_embedding = position_encoding_utils.gen_sineembed_for_position(x_pos_stack[None, :, 0:2], hidden_dim=d_model)[0]
 
+        attn_outputs = {}
         # local attn
         output = x_stack
         for k in range(len(self.self_attn_layers)):
@@ -136,12 +137,16 @@ class MTREncoder(nn.Module):
                 key_batch_cnt=batch_cnt,
                 index_pair_batch=batch_idxs
             )
+            attn_outputs['attn_n'] = output
 
         ret_full_feature = torch.zeros_like(x_stack_full)  # (batch_size * N, d_model)
         ret_full_feature[x_mask_stack] = output
 
         ret_full_feature = ret_full_feature.view(batch_size, N, d_model)
-        return ret_full_feature
+        return ret_full_feature, {
+            'index_pair': index_pair,
+            **attn_outputs,
+        }
 
     def forward(self, batch_dict):
         """
@@ -150,11 +155,11 @@ class MTREncoder(nn.Module):
               input_dict:
         """
         input_dict = batch_dict['input_dict']
-        obj_trajs, obj_trajs_mask = input_dict['obj_trajs'].cuda(), input_dict['obj_trajs_mask'].cuda() 
-        map_polylines, map_polylines_mask = input_dict['map_polylines'].cuda(), input_dict['map_polylines_mask'].cuda() 
+        obj_trajs, obj_trajs_mask = input_dict['obj_trajs'].cuda(), input_dict['obj_trajs_mask'].cuda()
+        map_polylines, map_polylines_mask = input_dict['map_polylines'].cuda(), input_dict['map_polylines_mask'].cuda()
 
-        obj_trajs_last_pos = input_dict['obj_trajs_last_pos'].cuda() 
-        map_polylines_center = input_dict['map_polylines_center'].cuda() 
+        obj_trajs_last_pos = input_dict['obj_trajs_last_pos'].cuda()
+        map_polylines_center = input_dict['map_polylines_center'].cuda()
         track_index_to_predict = input_dict['track_index_to_predict']
 
         assert obj_trajs_mask.dtype == torch.bool and map_polylines_mask.dtype == torch.bool
@@ -165,25 +170,31 @@ class MTREncoder(nn.Module):
         # apply polyline encoder
         obj_trajs_in = torch.cat((obj_trajs, obj_trajs_mask[:, :, :, None].type_as(obj_trajs)), dim=-1)
         obj_polylines_feature = self.agent_polyline_encoder(obj_trajs_in, obj_trajs_mask)  # (num_center_objects, num_objects, C)
+        batch_dict['agent_encoder_out'] = obj_polylines_feature
+
+
         map_polylines_feature = self.map_polyline_encoder(map_polylines, map_polylines_mask)  # (num_center_objects, num_polylines, C)
+        batch_dict['map_encoder_out'] = map_polyline_feature
 
         # apply self-attn
         obj_valid_mask = (obj_trajs_mask.sum(dim=-1) > 0)  # (num_center_objects, num_objects)
         map_valid_mask = (map_polylines_mask.sum(dim=-1) > 0)  # (num_center_objects, num_polylines)
 
-        global_token_feature = torch.cat((obj_polylines_feature, map_polylines_feature), dim=1) 
-        global_token_mask = torch.cat((obj_valid_mask, map_valid_mask), dim=1) 
-        global_token_pos = torch.cat((obj_trajs_last_pos, map_polylines_center), dim=1) 
+        global_token_feature = torch.cat((obj_polylines_feature, map_polylines_feature), dim=1)
+        global_token_mask = torch.cat((obj_valid_mask, map_valid_mask), dim=1)
+        global_token_pos = torch.cat((obj_trajs_last_pos, map_polylines_center), dim=1)
 
         if self.use_local_attn:
-            global_token_feature = self.apply_local_attn(
+            global_token_feature, intermediate = self.apply_local_attn(
                 x=global_token_feature, x_mask=global_token_mask, x_pos=global_token_pos,
                 num_of_neighbors=self.model_cfg.NUM_OF_ATTN_NEIGHBORS
             )
+            batch_dict.update(intermediate)
         else:
             global_token_feature = self.apply_global_attn(
                 x=global_token_feature, x_mask=global_token_mask, x_pos=global_token_pos
             )
+
 
         obj_polylines_feature = global_token_feature[:, :num_objects]
         map_polylines_feature = global_token_feature[:, num_objects:]

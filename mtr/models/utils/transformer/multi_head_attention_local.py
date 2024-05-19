@@ -1,6 +1,6 @@
 # Motion Transformer (MTR): https://arxiv.org/abs/2209.13508
 # Published at NeurIPS 2022
-# Written by Shaoshuai Shi 
+# Written by Shaoshuai Shi
 # All Rights Reserved
 
 
@@ -48,8 +48,8 @@ class MultiheadAttentionLocal(nn.Module):
         embed_dim,
         num_heads,
         dropout=0.0,
-        without_weight=False, 
-        version='v2', 
+        without_weight=False,
+        version='v2',
         vdim=None
     ):
         super(MultiheadAttentionLocal, self).__init__()
@@ -70,10 +70,10 @@ class MultiheadAttentionLocal(nn.Module):
 
         self.in_proj_bias = Parameter(torch.empty(3 * embed_dim))
         self.out_proj = Linear(self.vdim, self.vdim, bias=True)
-        
+
         self.without_weight = without_weight
         if self.without_weight:
-            self.in_proj_weight = self.in_proj_bias = None 
+            self.in_proj_weight = self.in_proj_bias = None
             constant_(self.out_proj.bias, 0.0)
         else:
             self._reset_parameters()
@@ -104,13 +104,7 @@ class MultiheadAttentionLocal(nn.Module):
         vdim=None,
 
         # positional encoding setting.
-        relative_atten_weights=None,  # total_q_num, max_memory_num, nhead
 
-        # crpe module.
-        ctx_rpe_query=None,
-        ctx_rpe_key=None,
-        ctx_rpe_value=None,
-        rpe_distance=None,
         **kwargs
     ):
         r""" To reduce memory cost in attention computation, use index to indicate attention pair.
@@ -123,9 +117,6 @@ class MultiheadAttentionLocal(nn.Module):
             index_pair_batch: the batch index of each query.
             attn_mask:  mask that prevents attention to certain positions. This is an additive mask
                 (i.e. the values will be added to the attention layer).
-            relative_atten_weights: Add relative positional encoding.
-            ctx_rpe_query / ctx_rpe_key / ctx_rpe_value: nn.Module for providing contextual relative positional
-                encoding given rpe_distance between query and keys.
         Shape:
             - Inputs:
             - query: :math:`(N, C)` where N is the total query tokens length, C is
@@ -141,10 +132,6 @@ class MultiheadAttentionLocal(nn.Module):
             - index_pair_batch: :math:`(N)` where N is the total query tokens length (equals to ``query'')
             - attn_mask: :math:`(N, L)` where N is the total query tokens length (equals to ``query''),
                 L is max_key_num for computing attention.
-            - relative_atten_weights: :math:`(N, L, H)` where N is the total query tokens length (equals to ``query''),
-                L is max_key_num for computing attention, H is head_num for computing attention.
-            - rpe_distance: :math:`(N, L, 3)` where N is the total query tokens length (equals to ``query''),
-                L is max_key_num for computing attention.
             - Outputs:
             - attn_output: :math:`(N, C)` where N is the total query tokens length,
                 C is the embedding dimension.
@@ -153,30 +140,33 @@ class MultiheadAttentionLocal(nn.Module):
         """
         total_query_len, embed_dim = query.size()
         max_memory_len = index_pair.shape[1]
-        
+
         if vdim is None:
             assert key.size() == value.size()
             vdim = embed_dim
             v_head_dim = self.head_dim
         else:
+            assert False
             v_head_dim = vdim // self.num_heads
-            assert v_head_dim * self.num_heads == vdim 
+            assert v_head_dim * self.num_heads == vdim
 
         scaling = float(self.head_dim) ** -0.5
 
         # generate qkv features.
         if not self.without_weight:
             q = self._proj_qkv(query, 0, embed_dim)
-            q = q * scaling
+            #q = q * scaling
             k = self._proj_qkv(key, embed_dim, embed_dim * 2)
             v = self._proj_qkv(value, embed_dim * 2, embed_dim * 3)
         else:
+            assert False
             q = query * scaling
-            k, v = key, value 
+            k, v = key, value
 
         # -1 in index_pair means this key not joining attention computation.
         used_attn_mask = (index_pair == -1)  # Ignore the -1 pair.
         if attn_mask is not None:
+            assert False
             # attn_mask should have a shape as [total_query_size, max_memory_size]
             attn_mask = attn_mask.to(torch.bool)
             used_attn_mask = torch.logical_or(used_attn_mask, attn_mask)
@@ -191,38 +181,22 @@ class MultiheadAttentionLocal(nn.Module):
             q, k)  # total_query_len, max_memory_len, num_heads
         assert list(attn_output_weights.size()) == [total_query_len, max_memory_len, self.num_heads]
 
-        if ctx_rpe_key is not None:
-            rpe_attn_weight = ctx_rpe_key(rpe_distance, k, scaling,
-                                          query_batch_cnt, key_batch_cnt,
-                                          index_pair_batch, index_pair)
-            attn_output_weights = attn_output_weights + rpe_attn_weight
-        if ctx_rpe_query is not None:
-            rpe_attn_weight = ctx_rpe_query(rpe_distance, q, 1.0, query_batch_cnt)
-            attn_output_weights = attn_output_weights + rpe_attn_weight
-
-        if relative_atten_weights is not None:
-            # relative_atten_weights: A float tensor with shape [total_query_num, max_memory_num, nhead]
-            attn_output_weights = attn_output_weights + relative_atten_weights
-
         # attn_output_weights: [total_query_num, max_memory_num, nhead]
         used_attn_mask = used_attn_mask.unsqueeze(-1).repeat(1, 1, self.num_heads).contiguous()
         attn_output_weights.masked_fill_(used_attn_mask, float("-inf"))
         attn_output_weights = F.softmax(attn_output_weights, dim=1)
         attn_output_weights = F.dropout(attn_output_weights, p=self.dropout, training=self.training)
 
-        if ctx_rpe_value is not None:
-            attn_output = ctx_rpe_value(rpe_distance, attn_output_weights, v,
-                                        query_batch_cnt, key_batch_cnt,
-                                        index_pair_batch, index_pair)
-        else:
-            attn_output = attention.__all__[self.attention_version].attention_value_computation(
-                query_batch_cnt, key_batch_cnt, index_pair_batch, index_pair,
-                attn_output_weights, v)
+        attn_output = attention.__all__[self.attention_version].attention_value_computation(
+            query_batch_cnt, key_batch_cnt, index_pair_batch, index_pair,
+            attn_output_weights, v)
         assert list(attn_output.size()) == [total_query_len, self.num_heads, v_head_dim]
 
         attn_output = attn_output.view(total_query_len, vdim)
-        
+
         if self.out_proj is not None:
             attn_output = F.linear(attn_output, self.out_proj.weight, self.out_proj.bias)
+        else:
+            assert False
 
         return attn_output, attn_output_weights.sum(dim=-1) / self.num_heads
