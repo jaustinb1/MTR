@@ -129,7 +129,7 @@ class MTREncoder(nn.Module):
         # local attn
         output = x_stack
         for k in range(len(self.self_attn_layers)):
-            output = self.self_attn_layers[k](
+            output, cs = self.self_attn_layers[k](
                 src=output,
                 pos=pos_embedding,
                 index_pair=index_pair,
@@ -137,7 +137,8 @@ class MTREncoder(nn.Module):
                 key_batch_cnt=batch_cnt,
                 index_pair_batch=batch_idxs
             )
-            attn_outputs['attn_n'] = output
+            for kk in cs:
+                attn_outputs[f'attn_{k}_{kk}'] = cs[kk]
 
         ret_full_feature = torch.zeros_like(x_stack_full)  # (batch_size * N, d_model)
         ret_full_feature[x_mask_stack] = output
@@ -146,6 +147,7 @@ class MTREncoder(nn.Module):
         return ret_full_feature, {
             'index_pair': index_pair,
             **attn_outputs,
+            'pos_embedding': pos_embedding,
         }
 
     def forward(self, batch_dict):
@@ -174,7 +176,7 @@ class MTREncoder(nn.Module):
 
 
         map_polylines_feature = self.map_polyline_encoder(map_polylines, map_polylines_mask)  # (num_center_objects, num_polylines, C)
-        batch_dict['map_encoder_out'] = map_polyline_feature
+        batch_dict['map_encoder_out'] = map_polylines_feature
 
         # apply self-attn
         obj_valid_mask = (obj_trajs_mask.sum(dim=-1) > 0)  # (num_center_objects, num_objects)

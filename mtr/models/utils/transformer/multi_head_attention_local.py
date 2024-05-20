@@ -138,6 +138,7 @@ class MultiheadAttentionLocal(nn.Module):
             - attn_output_weights: :math:`(N, L, H)` where N is the total query tokens length (equals to ``query''),
                 L is max_key_num for computing attention, H is head_num for computing attention.
         """
+        ii = {}
         total_query_len, embed_dim = query.size()
         max_memory_len = index_pair.shape[1]
 
@@ -155,7 +156,7 @@ class MultiheadAttentionLocal(nn.Module):
         # generate qkv features.
         if not self.without_weight:
             q = self._proj_qkv(query, 0, embed_dim)
-            #q = q * scaling
+            q = q * scaling
             k = self._proj_qkv(key, embed_dim, embed_dim * 2)
             v = self._proj_qkv(value, embed_dim * 2, embed_dim * 3)
         else:
@@ -174,6 +175,10 @@ class MultiheadAttentionLocal(nn.Module):
         q = q.contiguous().view(total_query_len, self.num_heads, self.head_dim)
         k = k.contiguous().view(-1, self.num_heads, self.head_dim)
         v = v.contiguous().view(-1, self.num_heads, v_head_dim)
+
+        ii['q_proj'] = q
+        ii['k_proj'] = k
+        ii['v_proj'] = v
 
         # compute attention weight.
         attn_output_weights = attention.__all__[self.attention_version].attention_weight_computation(
@@ -194,9 +199,12 @@ class MultiheadAttentionLocal(nn.Module):
 
         attn_output = attn_output.view(total_query_len, vdim)
 
+        ii['scores'] = attn_output_weights
+        ii['pre_out_proj'] = attn_output
+
         if self.out_proj is not None:
             attn_output = F.linear(attn_output, self.out_proj.weight, self.out_proj.bias)
         else:
             assert False
 
-        return attn_output, attn_output_weights.sum(dim=-1) / self.num_heads
+        return attn_output, attn_output_weights.sum(dim=-1) / self.num_heads, ii

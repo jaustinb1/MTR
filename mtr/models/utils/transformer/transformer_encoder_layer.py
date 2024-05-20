@@ -67,17 +67,25 @@ class TransformerEncoderLayer(nn.Module):
                      query_batch_cnt=None,
                      key_batch_cnt=None,
                      index_pair_batch=None):
+        cs = {}
         q = k = self.with_pos_embed(src, pos)
-        src2 = self.self_attn(q, k, value=src, attn_mask=src_mask,
+        cs['q'] = q
+        cs['k'] = k
+        src2, _, ii = self.self_attn(q, k, value=src, attn_mask=src_mask,
                               key_padding_mask=src_key_padding_mask,
                               index_pair=index_pair, query_batch_cnt=query_batch_cnt,
-                              key_batch_cnt=key_batch_cnt, index_pair_batch=index_pair_batch)[0]
+                              key_batch_cnt=key_batch_cnt, index_pair_batch=index_pair_batch)
+        cs.update(ii)
+        cs['1'] = src2
         src = src + self.dropout1(src2)
         src = self.norm1(src)
+        cs['2'] = src
         src2 = self.linear2(self.dropout(self.activation(self.linear1(src))))
+        cs['3'] = src2
         src = src + self.dropout2(src2)
         src = self.norm2(src)
-        return src
+        cs['4'] = src
+        return src, cs
 
     def forward_pre(self, src,
                     src_mask: Optional[Tensor] = None,
@@ -109,6 +117,7 @@ class TransformerEncoderLayer(nn.Module):
                 key_batch_cnt=None,
                 index_pair_batch=None):
         if self.normalize_before:
+            assert False
             return self.forward_pre(src, src_mask, src_key_padding_mask, pos,
                                     index_pair=index_pair, query_batch_cnt=query_batch_cnt,
                                     key_batch_cnt=key_batch_cnt, index_pair_batch=index_pair_batch)
